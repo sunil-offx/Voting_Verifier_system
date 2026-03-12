@@ -7,7 +7,7 @@ w3 = Web3(Web3.HTTPProvider("http://127.0.0.1:8545"))
 
 # The address below is the default first deployed contract on hardhat node
 # Update if your contract deploys to a different address
-CONTRACT_ADDRESS = os.getenv("0x5FbDB2315678afecb367f032d93F642f64180aa3", "0x5FbDB2315678afecb367f032d93F642f64180aa3")
+CONTRACT_ADDRESS = os.getenv("0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0", "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0")
 
 def get_contract():
     try:

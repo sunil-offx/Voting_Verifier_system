@@ -4,6 +4,7 @@ import "@fontsource/inter/400.css";
 import "@fontsource/inter/500.css";
 import { RefreshCw } from "lucide-react";
 import { useState, FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { useCaptcha } from "@/components/CaptchaGenerator";
 
 const Index = () => {
@@ -14,6 +15,8 @@ const Index = () => {
   const [success, setSuccess] = useState("");
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const { captchaText, canvasRef, refresh } = useCaptcha();
+
+  const navigate = useNavigate();
 
   const handleAction = async () => {
     setError("");
@@ -41,7 +44,7 @@ const Index = () => {
     setIsAuthenticating(true);
 
     try {
-      const apiUrl = "http://127.0.0.1:8000";
+      const apiUrl = "/api";
 
       // Login Flow
       const formData = new URLSearchParams();
@@ -62,7 +65,7 @@ const Index = () => {
       sessionStorage.setItem("access_token", tokenData.access_token);
 
       // Navigate to polling station selection page
-      window.location.href = "/polling-station-selection";
+      navigate("/polling-station-selection");
 
     } catch (err: any) {
       setError(err.message || "An error occurred");

@@ -17,3 +17,4 @@ artifacts/
 # System
 .DS_Store
 Thumbs.db
+cd "Vote_bloackchain_verifier/blockchain"
