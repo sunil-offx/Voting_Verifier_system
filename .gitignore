@@ -1,0 +1,19 @@
+node_modules/
+.env
+dist/
+build/
+coverage/
+voting.db
+__pycache__/
+venv/
+.pytest_cache/
+uvicorn.log
+*.log
+
+# Hardhat
+cache/
+artifacts/
+
+# System
+.DS_Store
+Thumbs.db
