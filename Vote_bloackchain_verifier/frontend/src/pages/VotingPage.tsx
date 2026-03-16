@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { CheckCircle2, Loader2, RefreshCw } from "lucide-react";
+import { CheckCircle2, Loader2, RefreshCw, Smartphone, Info, AlertCircle } from "lucide-react";
 import { API_BASE_URL } from "@/lib/api";
 import VerificationSite from "@/components/VerificationSite";
 import {
@@ -13,6 +13,15 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
+import { QRCodeSVG } from "qrcode.react";
+import { 
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from "@/components/ui/dialog";
 
 export interface VoterRecord {
     voterName: string;
@@ -36,6 +45,17 @@ const VotingPage = () => {
     const [voters, setVoters] = useState<VoterRecord[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [activeVerification, setActiveVerification] = useState<VoterRecord | null>(null);
+    const [mobileUrl, setMobileUrl] = useState("");
+
+    useEffect(() => {
+        // Try to generate a useful mobile URL
+        const hostname = window.location.hostname;
+        if (hostname === "localhost" || hostname === "127.0.0.1") {
+            setMobileUrl("Check your terminal for the 'Network' IP (e.g., http://192.168.x.x:8080)");
+        } else {
+            setMobileUrl(window.location.href);
+        }
+    }, []);
 
     // If no context, redirect to home
     useEffect(() => {
@@ -63,7 +83,6 @@ const VotingPage = () => {
         const fileName = `dataset_${stateData.constituency.replace(/\s+/g, '_')}_${stateData.stationNumber}.csv`;
         
         try {
-            // 1. Load CSV
             const response = await fetch(`/${fileName}`);
             if (!response.ok) throw new Error("Dataset not found");
             const text = await response.text();
@@ -83,14 +102,12 @@ const VotingPage = () => {
                 }
             }
 
-            // 2. Sync with Backend
             await fetch(`${API_BASE_URL}/sync-electors`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(csvVoters)
             });
 
-            // 3. Get latest status from Backend
             const backendData = await fetchVotersFromBackend();
             if (backendData) {
                 const merged = csvVoters.map(v => {
@@ -131,15 +148,58 @@ const VotingPage = () => {
 
     return (
         <div className="min-h-screen bg-background text-foreground">
-            {/* Header */}
-            <header className="border-b-4 border-primary bg-primary">
-                <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6">
-                    <h1 className="font-heading text-2xl sm:text-3xl font-bold text-primary-foreground text-center tracking-tight">
-                        Voter Verification Desk
-                    </h1>
-                    <p className="font-heading text-base sm:text-lg text-primary-foreground/90 text-center mt-1 font-medium">
-                        {stateData.stationName} ({stateData.constituency})
-                    </p>
+            <header className="border-b-4 border-primary bg-primary shadow-lg">
+                <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <div className="text-center sm:text-left">
+                        <h1 className="font-heading text-xl sm:text-2xl font-extrabold text-primary-foreground tracking-tighter uppercase">
+                            Verification identity Desk
+                        </h1>
+                        <p className="font-heading text-xs sm:text-sm text-primary-foreground/80 font-bold">
+                            {stateData.stationName} — {stateData.constituency}
+                        </p>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                        <Dialog>
+                            <DialogTrigger asChild>
+                                <Button variant="secondary" size="sm" className="font-bold shadow-md hover:bg-white/90">
+                                    <Smartphone className="mr-2 h-4 w-4" />
+                                    Connect Mobile Sensor
+                                </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-sm">
+                                <DialogHeader>
+                                    <DialogTitle className="font-heading font-black text-xl uppercase italic tracking-tighter">Handheld Verifier</DialogTitle>
+                                    <DialogDescription className="text-xs font-medium">
+                                        Scan this QR with your mobile to use it as a portable fingerprint & QR scanner.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <div className="flex flex-col items-center justify-center p-6 bg-muted/30 rounded-xl border-2 border-dashed border-primary/20">
+                                    {mobileUrl.startsWith("http") ? (
+                                        <>
+                                            <div className="bg-white p-4 rounded-lg shadow-xl mb-4">
+                                                <QRCodeSVG value={mobileUrl} size={180} />
+                                            </div>
+                                            <p className="text-[10px] font-mono bg-background px-2 py-1 rounded border overflow-hidden w-full text-center">
+                                                {mobileUrl}
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <div className="text-center py-4">
+                                            <AlertCircle className="h-10 w-10 text-orange-500 mx-auto mb-2" />
+                                            <p className="text-xs font-bold text-orange-600">{mobileUrl}</p>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="bg-primary/5 p-3 rounded-lg flex items-start gap-2">
+                                    <Info className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                                    <p className="text-[10px] leading-relaxed text-muted-foreground">
+                                        <strong>Pro Tip:</strong> Mobile biometrics require a secure connection. Access via your laptop's Wi-Fi IP. Ensure your phone is on the same network.
+                                    </p>
+                                </div>
+                            </DialogContent>
+                        </Dialog>
+                    </div>
                 </div>
             </header>
 
@@ -225,7 +285,6 @@ const VotingPage = () => {
                 )}
             </main>
 
-            {/* Verification Modal/Overlay */}
             {activeVerification && (
                 <VerificationSite 
                     voterId={activeVerification.voterId}

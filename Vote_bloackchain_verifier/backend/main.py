@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 from datetime import timedelta
 import hashlib
 
-from . import models, schemas, auth, database, blockchain_utils
+from . import models, schemas, auth, database, blockchain_utils, biometric_db, biometric_utils
 from .database import engine
+from .biometric_db import get_biometric_db, VoterBiometricVector
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -100,24 +101,54 @@ def verify_qr(req: schemas.VerifyQRRequest, db: Session = Depends(database.get_d
     return {"status": "success", "message": "QR Scan Successful, Proceed to Biometrics"}
 
 @app.post("/verify-biometric")
-def verify_biometric(req: schemas.BiometricRequest, db: Session = Depends(database.get_db)):
+def verify_biometric(
+    req: schemas.BiometricRequest, 
+    db: Session = Depends(database.get_db),
+    bio_db: Session = Depends(get_biometric_db)
+):
     elector = db.query(models.Elector).filter(models.Elector.voter_id == req.voter_id).first()
     if not elector:
-        raise HTTPException(status_code=404, detail="Voter ID not found")
-        
-    existing_biometric = db.query(models.Elector).filter(
+        raise HTTPException(status_code=404, detail="Voter not found in registration record")
+    
+    # Check if this physical biometric already exists for ANYONE ELSE (Deduplication)
+    # This prevents different people from sharing fingerprints
+    existing_biometric_elsewhere = db.query(models.Elector).filter(
         models.Elector.fingerprint_hash == req.fingerprint_data,
         models.Elector.voter_id != req.voter_id
     ).first()
     
-    if existing_biometric:
+    if existing_biometric_elsewhere:
         raise HTTPException(status_code=403, detail="Biometric record already exists under a different Voter ID! Not eligible to vote.")
 
-    elector.fingerprint_hash = req.fingerprint_data
-    elector.is_verified = True
-    db.commit()
+    # 1. Update Core Database (Mark as verified if first time)
+    if not elector.is_verified:
+        elector.fingerprint_hash = req.fingerprint_data
+        elector.is_verified = True
+        db.commit()
+
+    # 2. Store in Separate Biometric Vector Database with Finger Labeling
+    # Count existing fingers for this voter to determine label (Finger 1, 2, 3...)
+    existing_finger_count = bio_db.query(VoterBiometricVector).filter(VoterBiometricVector.voter_id == req.voter_id).count()
+    next_finger_label = f"Finger {existing_finger_count + 1}"
     
-    return {"status": "success", "message": "Voter Verified Successfully"}
+    # Generate high-dimensional vector
+    vector = biometric_utils.generate_biometric_vector(req.fingerprint_data)
+    
+    new_vector = VoterBiometricVector(
+        voter_id=req.voter_id,
+        finger_label=next_finger_label,
+        vector_data=vector
+    )
+    bio_db.add(new_vector)
+    bio_db.commit()
+    
+    return {
+        "status": "success", 
+        "message": f"{next_finger_label} Verified & Vectorized",
+        "finger": next_finger_label,
+        "vector_count": existing_finger_count + 1,
+        "db": "biometric_vectors.db"
+    }
 
 @app.post("/sync-electors")
 def sync_electors(elector_list: list[schemas.ElectorBase], db: Session = Depends(database.get_db)):
