@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 from datetime import timedelta
 import hashlib
 
-from backend import models, schemas, auth, database, blockchain_utils
-from backend.database import engine
+from . import models, schemas, auth, database, blockchain_utils
+from .database import engine
 
 models.Base.metadata.create_all(bind=engine)
 

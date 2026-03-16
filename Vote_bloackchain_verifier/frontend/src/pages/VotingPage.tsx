@@ -45,9 +45,10 @@ const VotingPage = () => {
         if (!stateData) return;
 
         const loadDataset = async () => {
+            const fileName = `dataset_${stateData.constituency.replace(/\s+/g, '_')}_${stateData.stationNumber}.csv`;
             try {
                 // Automatically fetch the CSV file statically from the public folder
-                const response = await fetch('/dataset.csv');
+                const response = await fetch(`/${fileName}`);
 
                 if (!response.ok) {
                     throw new Error("Dataset not found");
@@ -80,9 +81,9 @@ const VotingPage = () => {
                 }
 
                 setVoters(parsedVoters);
-                toast.success(`Automatically loaded ${parsedVoters.length} voters from dataset.csv`);
+                toast.success(`Automatically loaded ${parsedVoters.length} voters from ${fileName}`);
             } catch (err) {
-                toast.error("Could not load 'dataset.csv' from the public folder. Please upload it inside frontend/public/ !!");
+                toast.error(`Could not load '${fileName}' from the public folder. Please upload it inside frontend/public/ !!`);
                 console.error(err);
             } finally {
                 setIsLoading(false);
@@ -129,7 +130,7 @@ const VotingPage = () => {
                     <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed border-border rounded-lg bg-card text-center">
                         <h2 className="font-heading text-xl text-destructive font-semibold mb-2">Dataset Not Found</h2>
                         <p className="font-body text-muted-foreground max-w-md">
-                            Please drop your <strong>dataset.csv</strong> file directly into the:
+                            Please drop your <strong>{`dataset_${stateData.constituency.replace(/\s+/g, '_')}_${stateData.stationNumber}.csv`}</strong> file directly into the:
                             <br /><br />
                             <code className="bg-muted px-3 py-2 rounded text-base border-border border">Voting_Verifier_system/frontend/public/</code>
                             <br /><br /> folder and click Retry below.

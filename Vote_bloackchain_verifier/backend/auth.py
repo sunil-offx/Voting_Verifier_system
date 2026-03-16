@@ -5,8 +5,8 @@ from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
-from backend.database import get_db
-from backend import models, schemas
+from .database import get_db
+from . import models, schemas
 
 SECRET_KEY = "HACKATHON_SUPER_SECRET_KEY_CHANGE_IN_PROD"
 ALGORITHM = "HS256"
