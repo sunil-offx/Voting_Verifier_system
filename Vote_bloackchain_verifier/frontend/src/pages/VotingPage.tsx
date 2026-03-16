@@ -2,7 +2,9 @@ import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2, RefreshCw } from "lucide-react";
+import { API_BASE_URL } from "@/lib/api";
+import VerificationSite from "@/components/VerificationSite";
 import {
     Table,
     TableBody,
@@ -33,6 +35,7 @@ const VotingPage = () => {
 
     const [voters, setVoters] = useState<VoterRecord[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [activeVerification, setActiveVerification] = useState<VoterRecord | null>(null);
 
     // If no context, redirect to home
     useEffect(() => {
@@ -41,63 +44,87 @@ const VotingPage = () => {
         }
     }, [stateData, navigate]);
 
-    useEffect(() => {
-        if (!stateData) return;
-
-        const loadDataset = async () => {
-            const fileName = `dataset_${stateData.constituency.replace(/\s+/g, '_')}_${stateData.stationNumber}.csv`;
-            try {
-                // Automatically fetch the CSV file statically from the public folder
-                const response = await fetch(`/${fileName}`);
-
-                if (!response.ok) {
-                    throw new Error("Dataset not found");
-                }
-
-                const text = await response.text();
-
-                // Basic CSV Parser
-                const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
-                if (lines.length < 2) { // Need at least header + 1 row
-                    toast.error("CSV file seems empty or contains only headers");
-                    setIsLoading(false);
-                    return;
-                }
-
-                // Assume first row is header, process subsequent rows
-                const parsedVoters: VoterRecord[] = [];
-
-                // Skip header (i=0)
-                for (let i = 1; i < lines.length; i++) {
-                    const columns = lines[i].split(",").map(col => col.trim().replace(/^"|"$/g, ''));
-                    if (columns.length >= 3) {
-                        parsedVoters.push({
-                            voterName: columns[0] || "-",
-                            voterId: columns[1] || "-",
-                            fatherName: columns[2] || "-",
-                            verified: false
-                        });
-                    }
-                }
-
-                setVoters(parsedVoters);
-                toast.success(`Automatically loaded ${parsedVoters.length} voters from ${fileName}`);
-            } catch (err) {
-                toast.error(`Could not load '${fileName}' from the public folder. Please upload it inside frontend/public/ !!`);
-                console.error(err);
-            } finally {
-                setIsLoading(false);
+    const fetchVotersFromBackend = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/electors`);
+            if (response.ok) {
+                const backendElectors = await response.json();
+                return backendElectors;
             }
-        };
+        } catch (e) {
+            console.error("Failed to fetch electors from backend", e);
+        }
+        return null;
+    };
 
+    const loadDataset = async () => {
+        if (!stateData) return;
+        setIsLoading(true);
+        const fileName = `dataset_${stateData.constituency.replace(/\s+/g, '_')}_${stateData.stationNumber}.csv`;
+        
+        try {
+            // 1. Load CSV
+            const response = await fetch(`/${fileName}`);
+            if (!response.ok) throw new Error("Dataset not found");
+            const text = await response.text();
+
+            const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
+            if (lines.length < 2) throw new Error("CSV empty");
+
+            const csvVoters: any[] = [];
+            for (let i = 1; i < lines.length; i++) {
+                const columns = lines[i].split(",").map(col => col.trim().replace(/^"|"$/g, ''));
+                if (columns.length >= 3) {
+                    csvVoters.push({
+                        voter_name: columns[0],
+                        voter_id: columns[1],
+                        father_name: columns[2]
+                    });
+                }
+            }
+
+            // 2. Sync with Backend
+            await fetch(`${API_BASE_URL}/sync-electors`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(csvVoters)
+            });
+
+            // 3. Get latest status from Backend
+            const backendData = await fetchVotersFromBackend();
+            if (backendData) {
+                const merged = csvVoters.map(v => {
+                    const status = backendData.find((b: any) => b.voter_id === v.voter_id);
+                    return {
+                        voterName: v.voter_name,
+                        voterId: v.voter_id,
+                        fatherName: v.father_name,
+                        verified: status ? status.is_verified : false
+                    };
+                });
+                setVoters(merged);
+            }
+
+            toast.success(`Active Dataset: ${fileName}`);
+        } catch (err) {
+            console.error(err);
+            toast.error("Error loading/syncing dataset.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
         loadDataset();
     }, [stateData]);
 
-    const handleVerify = (index: number) => {
-        const newVoters = [...voters];
-        newVoters[index].verified = true;
-        setVoters(newVoters);
-        toast.success(`Identity Confirmed: ${newVoters[index].voterName} has been verified.`);
+    const handleVerificationSuccess = () => {
+        if (activeVerification) {
+            setVoters(prev => prev.map(v => 
+                v.voterId === activeVerification.voterId ? { ...v, verified: true } : v
+            ));
+        }
+        setActiveVerification(null);
     };
 
     if (!stateData) return null;
@@ -117,13 +144,19 @@ const VotingPage = () => {
             </header>
 
             <main className="max-w-5xl mx-auto px-4 py-8 sm:px-6">
+                <div className="flex justify-end mb-4">
+                    <Button variant="outline" size="sm" onClick={loadDataset} disabled={isLoading}>
+                        <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
+                        Sync Records
+                    </Button>
+                </div>
 
                 {isLoading ? (
                     <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed border-border rounded-lg bg-card">
                         <Loader2 className="h-12 w-12 text-primary animate-spin mb-4" />
-                        <h2 className="font-heading text-xl font-semibold mb-2">Loading Dataset...</h2>
+                        <h2 className="font-heading text-xl font-semibold mb-2">Syncing with Backend...</h2>
                         <p className="font-body text-muted-foreground text-center max-w-md">
-                            Automatically reading dataset.csv from your project folder...
+                            Initializing distributed database records for verification...
                         </p>
                     </div>
                 ) : voters.length === 0 ? (
@@ -132,15 +165,9 @@ const VotingPage = () => {
                         <p className="font-body text-muted-foreground max-w-md">
                             Please drop your <strong>{`dataset_${stateData.constituency.replace(/\s+/g, '_')}_${stateData.stationNumber}.csv`}</strong> file directly into the:
                             <br /><br />
-                            <code className="bg-muted px-3 py-2 rounded text-base border-border border">Voting_Verifier_system/frontend/public/</code>
-                            <br /><br /> folder and click Retry below.
+                            <code className="bg-muted px-3 py-2 rounded text-base border-border border">frontend/public/</code>
+                            <br /><br /> folder and click Sync Records.
                         </p>
-                        <Button
-                            className="mt-6 font-heading"
-                            onClick={() => window.location.reload()}
-                        >
-                            Retry Loading
-                        </Button>
                     </div>
                 ) : (
                     <div className="bg-card border border-border mt-4 shadow-sm rounded-md overflow-hidden animate-in fade-in zoom-in-95 duration-300">
@@ -176,7 +203,7 @@ const VotingPage = () => {
                                                 ) : (
                                                     <Button
                                                         size="sm"
-                                                        onClick={() => handleVerify(idx)}
+                                                        onClick={() => setActiveVerification(voter)}
                                                         className="w-full font-heading font-bold hover:scale-105 transition-transform"
                                                     >
                                                         Verify
@@ -197,6 +224,16 @@ const VotingPage = () => {
                     </div>
                 )}
             </main>
+
+            {/* Verification Modal/Overlay */}
+            {activeVerification && (
+                <VerificationSite 
+                    voterId={activeVerification.voterId}
+                    voterName={activeVerification.voterName}
+                    onSuccess={handleVerificationSuccess}
+                    onCancel={() => setActiveVerification(null)}
+                />
+            )}
         </div>
     );
 };

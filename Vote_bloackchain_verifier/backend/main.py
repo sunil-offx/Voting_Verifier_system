@@ -87,3 +87,52 @@ def cast_vote(vote_req: schemas.VoteRequest, current_user: models.User = Depends
         return {"status": "success", "tx_receipt": receipt.transactionHash.hex(), "message": "Vote successfully cast on blockchain"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/verify-qr")
+def verify_qr(req: schemas.VerifyQRRequest, db: Session = Depends(database.get_db)):
+    elector = db.query(models.Elector).filter(models.Elector.voter_id == req.voter_id).first()
+    if not elector:
+        raise HTTPException(status_code=404, detail="Voter ID not found in master records")
+    
+    if elector.is_verified:
+        raise HTTPException(status_code=400, detail="Voter already verified and likely voted")
+        
+    return {"status": "success", "message": "QR Scan Successful, Proceed to Biometrics"}
+
+@app.post("/verify-biometric")
+def verify_biometric(req: schemas.BiometricRequest, db: Session = Depends(database.get_db)):
+    elector = db.query(models.Elector).filter(models.Elector.voter_id == req.voter_id).first()
+    if not elector:
+        raise HTTPException(status_code=404, detail="Voter ID not found")
+        
+    existing_biometric = db.query(models.Elector).filter(
+        models.Elector.fingerprint_hash == req.fingerprint_data,
+        models.Elector.voter_id != req.voter_id
+    ).first()
+    
+    if existing_biometric:
+        raise HTTPException(status_code=403, detail="Biometric record already exists under a different Voter ID! Not eligible to vote.")
+
+    elector.fingerprint_hash = req.fingerprint_data
+    elector.is_verified = True
+    db.commit()
+    
+    return {"status": "success", "message": "Voter Verified Successfully"}
+
+@app.post("/sync-electors")
+def sync_electors(elector_list: list[schemas.ElectorBase], db: Session = Depends(database.get_db)):
+    for e in elector_list:
+        existing = db.query(models.Elector).filter(models.Elector.voter_id == e.voter_id).first()
+        if not existing:
+            new_e = models.Elector(
+                voter_id=e.voter_id,
+                voter_name=e.voter_name,
+                father_name=e.father_name
+            )
+            db.add(new_e)
+    db.commit()
+    return {"status": "success", "count": len(elector_list)}
+
+@app.get("/electors")
+def get_electors(db: Session = Depends(database.get_db)):
+    return db.query(models.Elector).all()

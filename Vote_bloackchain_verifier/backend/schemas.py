@@ -23,3 +23,24 @@ class TokenData(BaseModel):
 
 class VoteRequest(BaseModel):
     candidate_id: int
+
+class ElectorBase(BaseModel):
+    voter_id: str
+    voter_name: str
+    father_name: str
+
+class Elector(ElectorBase):
+    id: int
+    is_verified: bool
+    fingerprint_hash: str | None = None
+
+    class Config:
+        from_attributes = True
+
+class VerifyQRRequest(BaseModel):
+    qr_content: str
+    voter_id: str
+
+class BiometricRequest(BaseModel):
+    voter_id: str
+    fingerprint_data: str # Base64 or hash string
