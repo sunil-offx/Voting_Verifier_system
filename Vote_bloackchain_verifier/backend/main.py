@@ -4,10 +4,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from datetime import timedelta
 import hashlib
+import uuid
+from datetime import datetime
 
-from . import models, schemas, auth, database, blockchain_utils, biometric_db, biometric_utils
-from .database import engine
-from .biometric_db import get_biometric_db, VoterBiometricVector
+import models, schemas, auth, database, blockchain_utils, biometric_db, biometric_utils
+from database import engine
+from biometric_db import get_biometric_db, VoterBiometricVector
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -110,15 +112,23 @@ def verify_biometric(
     if not elector:
         raise HTTPException(status_code=404, detail="Voter not found in registration record")
     
-    # Check if this physical biometric already exists for ANYONE ELSE (Deduplication)
-    # This prevents different people from sharing fingerprints
-    existing_biometric_elsewhere = db.query(models.Elector).filter(
-        models.Elector.fingerprint_hash == req.fingerprint_data,
-        models.Elector.voter_id != req.voter_id
-    ).first()
+    # Generate high-dimensional vector for the current request
+    current_vector = biometric_utils.generate_biometric_vector(req.fingerprint_data)
+
+    # SECURE DEDUPLICATION: Check for physically similar biometrics across all voters
+    # In a production system, you'd use a vector database (Milvus/Pinecone)
+    # For this prototype, we cross-reference against all stored vectors in the biometric_vectors.db
+    all_stored_vectors = bio_db.query(VoterBiometricVector).all()
     
-    if existing_biometric_elsewhere:
-        raise HTTPException(status_code=403, detail="Biometric record already exists under a different Voter ID! Not eligible to vote.")
+    for stored in all_stored_vectors:
+        # Check if this physical biometric matches someone ELSE's record
+        if stored.voter_id != req.voter_id:
+            is_match, similarity = biometric_utils.verify_similarity(current_vector, stored.vector_data)
+            if is_match:
+                raise HTTPException(
+                    status_code=403, 
+                    detail=f"FRAUD DETECTED: Physical biometric match ({similarity:.2%}) found in database under Voter ID: {stored.voter_id}! Access Denied."
+                )
 
     # 1. Update Core Database (Mark as verified if first time)
     if not elector.is_verified:
@@ -167,3 +177,36 @@ def sync_electors(elector_list: list[schemas.ElectorBase], db: Session = Depends
 @app.get("/electors")
 def get_electors(db: Session = Depends(database.get_db)):
     return db.query(models.Elector).all()
+@app.post("/remote-verify/start")
+def start_remote_verify(req: schemas.RemoteSessionCreate, db: Session = Depends(database.get_db)):
+    session_id = str(uuid.uuid4())
+    new_session = models.RemoteSession(
+        session_id=session_id,
+        voter_id=req.voter_id,
+        status="pending",
+        timestamp=datetime.now().isoformat()
+    )
+    db.add(new_session)
+    db.commit()
+    return {"session_id": session_id}
+
+@app.get("/remote-verify/status/{session_id}")
+def get_remote_status(session_id: str, db: Session = Depends(database.get_db)):
+    session = db.query(models.RemoteSession).filter(models.RemoteSession.session_id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {
+        "status": session.status,
+        "fingerprint_data": session.fingerprint_data
+    }
+
+@app.post("/remote-verify/submit")
+def submit_remote_verify(req: schemas.RemoteSessionSubmit, db: Session = Depends(database.get_db)):
+    session = db.query(models.RemoteSession).filter(models.RemoteSession.session_id == req.session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    session.fingerprint_data = req.fingerprint_data
+    session.status = "completed"
+    db.commit()
+    return {"status": "success"}

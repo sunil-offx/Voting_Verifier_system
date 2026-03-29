@@ -1,5 +1,5 @@
 from sqlalchemy import Boolean, Column, Integer, String
-from .database import Base
+from database import Base
 
 class User(Base):
     __tablename__ = "users"
@@ -19,4 +19,12 @@ class Elector(Base):
     father_name = Column(String)
     fingerprint_hash = Column(String, nullable=True) # Stored after biometric step
     is_verified = Column(Boolean, default=False)
+    timestamp = Column(String, nullable=True)
+class RemoteSession(Base):
+    __tablename__ = "remote_sessions"
+
+    session_id = Column(String, primary_key=True, index=True)
+    voter_id = Column(String, index=True)
+    status = Column(String, default="pending") # pending, completed, failed
+    fingerprint_data = Column(String, nullable=True)
     timestamp = Column(String, nullable=True)

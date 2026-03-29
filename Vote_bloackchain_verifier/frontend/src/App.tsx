@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Index from "./pages/Index.tsx";
 import PollingStationSelection from "./pages/PollingStationSelection.tsx";
 import VotingPage from "./pages/VotingPage.tsx";
+import MobileVerify from "./pages/MobileVerify.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -20,6 +21,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/polling-station-selection" element={<PollingStationSelection />} />
           <Route path="/polling-station-details" element={<VotingPage />} />
+          <Route path="/mobile-verify/:sessionId" element={<MobileVerify />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -44,3 +44,14 @@ class VerifyQRRequest(BaseModel):
 class BiometricRequest(BaseModel):
     voter_id: str
     fingerprint_data: str # Base64 or hash string
+class RemoteSessionCreate(BaseModel):
+    voter_id: str
+
+class RemoteSessionResponse(BaseModel):
+    session_id: str
+    status: str
+    fingerprint_data: str | None = None
+
+class RemoteSessionSubmit(BaseModel):
+    session_id: str
+    fingerprint_data: str
